@@ -75,8 +75,16 @@ Also, even though [some authors](https://www.stat.berkeley.edu/~breiman/RandomFo
 ```{r, warning=FALSE, message=FALSE}
 registerDoMC(cores = 3) # Register core for parallel processing.
 tControl <- trainControl(method='cv', number = 5, allowParallel = T) # train control function for X-validation.
+ptm <- proc.time()
 rfModel <- train(classe ~ ., data = finalTraining, method='rf', trControl=tControl, importance = T) # model building
+finalTime <- proc.time() - ptm
 rfModel
+```
+
+We can also prove that the Random Forest algorithm is computationally expensive by looking at the following table, where it shows that on an Intel Quad-core i7 with 16GB RAM and SSD the model trained in `12 mins`, even though we registered 3 cores for parallel execution. Doing it with a single core increases that time to `37 mins`.
+
+```{r, warning=FALSE, message=FALSE}
+finalTime
 ```
 
 ## 3.1 Selected variables
@@ -109,7 +117,7 @@ testConf <- confusionMatrix(pred, test$classe)
 testConf
 ```
 
-As we can see, we've achieved an **accuracy** of ``r round(testConf$overall[1]*100, 2)``% and an **out-of-sample error** of ``r round((1-testConf$overall[1])*100, 2)``%. As we can observe, these figures fall closely in line with the **in-sample** error and accuracy. The general expectation is for the **out-of-sample** to be greater. This difference is noticeable, but hardly abnormal, and could be due to: 
+As we can see, we've achieved an **accuracy** of ``r round(testConf$overall[1]*100, 2)``% and an **out-of-sample error** of ``r round((1-testConf$overall[1])*100, 2)``%. As we can observe, these figures fall closely in line with the **in-sample** error and accuracy. The general expectation is for the **out-of-sample** metrics to be much greater. This difference is curious, but not entirely unexpected, due to any of the following:
 
 1. The training set having more diversified cases and hence accounts for more variance. 
 2. The cross-validation, as expected, is reducing the bias, but marginally increasing the variance. 
@@ -139,3 +147,5 @@ pml_write_files = function(x) {
 
 pml_write_files(finalBlindPred)
 ```
+
+This concludes our study
