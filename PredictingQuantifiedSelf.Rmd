@@ -19,6 +19,7 @@ set.seed(123123)
 library(dplyr)
 library(lattice)
 library(ggplot2)
+library(randomForest)
 library(caret)
 library(doMC)
 ```
@@ -51,7 +52,7 @@ training <- dat[inTrain,] # Don't forget the commas!
 test <- dat[-inTrain,] # Don't forget the commas!
 ```
 
-We end up with ``r nrow(training)`` rows for the training, ``r nrow(test)`` for the test set, and ``r nrow(validation)`` for the validation test. Upon first inspection, we find that the following columns have mostly `NA` observations, which means we should only consider those columns that have enough information. We have determined that relevant variables are those with at least `30%` of non-NAs. *This and subsequent transformations will only happen on the training set, as the test set, just as the validation set, must remain untouched.*
+We end up with ``r nrow(training)`` rows for the training, ``r nrow(test)`` for the test set, and ``r nrow(validation)`` for the validation test. Upon first inspection, we find that the following columns have mostly `NA` observations, which means we should only consider those columns that have enough information. We have determined that relevant variables are those with at least `30%` of non-NAs. *This and subsequent transformations will only happen on the training set, since both test and validation sets must remain untouched.*
 
 ```{r}
 redTraining <- training[,colMeans(!is.na(training)) >= 0.3]
@@ -80,29 +81,61 @@ rfModel
 
 ## 3.1 Selected variables
 
-```{r}
-plot(varImp(rfModel), main = "Top 20 most important vars", top = 20)
+```{r,echo=F, warning=FALSE, message=FALSE, fig.align='center', fig.height=6, fig.width=7}
+varImpPlot(rfModel$finalModel, sort = T, n.var = 20, type = 2, 
+           main='Top 20 most important variables', pch=19, lcolor='black')
 ```
 
-According to the plot, RF's built-in feature selection 
+According to the plot, RF's built-in feature selection has determined that the variables that most contribute to decrease model impurity are `roll_belt`, `yaw_belt`, `magnet_dumbbell_z` and `magnet_dumbbell_y`. This means that it would be possible to build a random forest with these variables at the expense of small decrease in accuracy and a small increase in OOB error.
 
-## 3.2 Accuracy and out-of-sample error estimation 
+## 3.2 Accuracy and in-sample error
 
 ```{r}
 trainingConf <- rfModel$finalModel$confusion
 trainingConf
 ```
 
-From the fitted model above, we can see that we've achieved an **accuracy** measure of ``r round(mean(1-trainingConf[,6])*100,2)`` for mtry = ``r rfModel$finalModel$mtry`` (27 vars sampled as potential splits). Note that although this figure is for the training set, we take it as estimate for the *test set, and subsequent new data*, effectively complementing the **out-of-sample error** of ``r round(mean(trainingConf[,6]),2)``
+From the fitted model above, we can see that we've achieved an **in-sample accuracy** measure of ``r round(mean(1-trainingConf[,6])*100,2)``% for mtry = ``r rfModel$finalModel$mtry`` (vars sampled as potential splits). with an **in-sample error** of ``r round(mean(trainingConf[,6]),3)*100``%.
 
 # 4. Model performance
+
+We will now apply the model to the test set and explore its performance by looking at the **out-of-sample error** and the **accuracy**. Remember that our process of stripping variables was only applied to the training set.
 
 ## 4.1 Prediction accuracy and error on test set
 
 ```{r}
 pred <- predict(rfModel, test)
+testConf <- confusionMatrix(pred, test$classe)
+testConf
 ```
 
-The out-of-sample error 
+As we can see, we've achieved an **accuracy** of ``r round(testConf$overall[1]*100, 2)``% and an **out-of-sample error** of ``r round((1-testConf$overall[1])*100, 2)``%. As we can observe, these figures fall closely in line with the **in-sample** error and accuracy. The general expectation is for the **out-of-sample** to be greater. This difference is noticeable, but hardly abnormal, and could be due to: 
 
-# 5. Conclusions
+1. The training set having more diversified cases and hence accounts for more variance. 
+2. The cross-validation, as expected, is reducing the bias, but marginally increasing the variance. 
+3. it is possible that there is no significant difference (in the statistical sense) between our prediction's ``r round((1-testConf$overall[1])*100, 2)``% and the model's ``r round(mean(trainingConf[,6]),3)*100``% sample error.
+
+## 4.2 Prediction on an entirely new dataset
+
+We have called this test set the 'validation set', and even though we don't have the correct predictions in it, we will nonetheless apply our model to it.
+
+```{r}
+blindPred <- predict(rfModel, validation)
+blindPred
+```
+
+We will convert the predictions to `chr` data type and will generate 20 text files with the individual prediction for each case for submission purposes.
+
+```{r}
+finalBlindPred <- as.character(blindPred)
+
+pml_write_files = function(x) {
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+pml_write_files(finalBlindPred)
+```
