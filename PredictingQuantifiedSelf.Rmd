@@ -1,0 +1,108 @@
+---
+title: "Predicting barbell lifts from ‘quantified self’ devices"
+author: "J.S. Ramos"
+date: "September 26, 2015"
+output: html_document
+---
+
+# 1. Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity. These type of devices are part of the quantified self movement. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants collected while perform barbell lifts correctly and incorrectly in order to predict whether or not these lifts were done correctly. This is the "classe" variable in the data sets.
+
+We would like to thank the 'Human Activity Recognition' group of the Informatics Department at the Pontifical Catholic University of Rio de Janeiro for making this dataset available for this study.
+
+# 2. Data loading, reduction and exploration
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE}
+options(scipen=999)
+set.seed(123123)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(doMC)
+```
+
+Though the assignment explicitly provides both training and test sets, for the purpose of this study we will partition just the training to generate the test set, and the original test set will be used as validation set.
+
+The training/test set can be found [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv), and the validation can be downloaded from [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv). We will download both locally to avoid network overhead, and explore and process the training set first. Note that it will be necessary to transform the `classe` var into a factor, and that doing this in the original training set will cause the generated test set to have it as factor as well.
+
+```{r}
+dat <- read.csv('./pml-training.csv', 
+                header = T, 
+                sep=",",
+                na.strings = c("#DIV/0!","NA",""), 
+                strip.white = T, 
+                stringsAsFactors=F)
+validation <- read.csv('./pml-testing.csv', 
+                header = T, 
+                sep=",",
+                na.strings = c("#DIV/0!","NA",""), 
+                strip.white = T, 
+                stringsAsFactors=F)
+dat$classe <- as.factor(dat$classe)
+```
+
+As explained throughout the course, the first and foremost step in building a statistical learning model is to partition the data. We will have `70%` of the original training set as training, and `30%` of it as test set. *Note that the validation set will not be touched beyond this point*.
+
+```{r}
+inTrain <- createDataPartition(y=dat$classe, p=0.7, list=F)
+training <- dat[inTrain,] # Don't forget the commas!
+test <- dat[-inTrain,] # Don't forget the commas!
+```
+
+We end up with ``r nrow(training)`` rows for the training, ``r nrow(test)`` for the test set, and ``r nrow(validation)`` for the validation test. Upon first inspection, we find that the following columns have mostly `NA` observations, which means we should only consider those columns that have enough information. We have determined that relevant variables are those with at least `30%` of non-NAs. *This and subsequent transformations will only happen on the training set, as the test set, just as the validation set, must remain untouched.*
+
+```{r}
+redTraining <- training[,colMeans(!is.na(training)) >= 0.3]
+```
+
+We also remove the `X` since, being just a row id, it will have ``r (length(unique(redTraining$X))/length(redTraining$X))*100`` variance and this will have an effect on our prediction. We'll also remove the `user_name` column since, being the subject's name, it doesn't add information to the model. Finally, we remove the `*timestamp*` and the `*window*` columns, since they are time-related variables and we do not want a prediction model on a time-series.
+
+```{r}
+finalTraining <- redTraining[,-c(1:7)]
+```
+
+With this we have gone from ``r ncol(dat)`` to ``r ncol(finalTraining)``. We can now proceed to feature and model selection.
+
+# 3. Model building
+
+We choose a *Random Forest* model due to it having built-in feature selection. According to the `caret` package [documentation](http://topepo.github.io/caret/featureselection.html), its feature selection algorithm is coupled with the parameter estimation algorithm, making it faster than if the features were searched for externally.
+
+Also, even though [some authors](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr) state that RFs do not require cross-validation, we will nonetheless train our RF with a 5-fold, single-pass cross-validation in order to reduce any potential bias, and to further get a more accurate estimate of the *out-of-sample error*.
+
+```{r, warning=FALSE, message=FALSE}
+registerDoMC(cores = 3) # Register core for parallel processing.
+tControl <- trainControl(method='cv', number = 5, allowParallel = T) # train control function for X-validation.
+rfModel <- train(classe ~ ., data = finalTraining, method='rf', trControl=tControl, importance = T) # model building
+rfModel
+```
+
+## 3.1 Selected variables
+
+```{r}
+plot(varImp(rfModel), main = "Top 20 most important vars", top = 20)
+```
+
+According to the plot, RF's built-in feature selection 
+
+## 3.2 Accuracy and out-of-sample error estimation 
+
+```{r}
+trainingConf <- rfModel$finalModel$confusion
+trainingConf
+```
+
+From the fitted model above, we can see that we've achieved an **accuracy** measure of ``r round(mean(1-trainingConf[,6])*100,2)`` for mtry = ``r rfModel$finalModel$mtry`` (27 vars sampled as potential splits). Note that although this figure is for the training set, we take it as estimate for the *test set, and subsequent new data*, effectively complementing the **out-of-sample error** of ``r round(mean(trainingConf[,6]),2)``
+
+# 4. Model performance
+
+## 4.1 Prediction accuracy and error on test set
+
+```{r}
+pred <- predict(rfModel, test)
+```
+
+The out-of-sample error 
+
+# 5. Conclusions
